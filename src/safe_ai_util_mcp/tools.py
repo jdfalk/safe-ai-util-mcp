@@ -35,7 +35,13 @@ class RunResult:
     stderr: str
 
 
-def run_tool(args: List[str], *, timeout: Optional[int] = None, cwd: Optional[str] = None, env: Optional[dict] = None) -> RunResult:
+def run_tool(
+    args: List[str],
+    *,
+    timeout: Optional[int] = None,
+    cwd: Optional[str] = None,
+    env: Optional[dict] = None,
+) -> RunResult:
     """Run the safe-ai-util tool with provided arguments, returning structured output.
 
     This uses the hardened Rust utility for actual execution.
@@ -66,6 +72,7 @@ def run_tool(args: List[str], *, timeout: Optional[int] = None, cwd: Optional[st
 
 # Convenience wrappers mapping to common workflows
 
+
 def tool_git_add(pattern: str = ".") -> RunResult:
     return run_tool(["git", "add", pattern])
 
@@ -79,7 +86,7 @@ def tool_git_push() -> RunResult:
 
 
 def tool_git_status() -> RunResult:
-    return run_tool(["git", "status"]) 
+    return run_tool(["git", "status"])
 
 
 def tool_buf_generate(module: Optional[str] = None) -> RunResult:
