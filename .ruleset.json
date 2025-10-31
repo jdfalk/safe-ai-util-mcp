@@ -1,0 +1,14 @@
+{
+  "name": "Protect main branch",
+  "enforcement": "active",
+  "target": "branch",
+  "conditions": {
+    "ref_name": {
+      "include": ["refs/heads/main"],
+      "exclude": []
+    }
+  },
+  "rules": [
+    { "type": "deletion" }
+  ]
+}

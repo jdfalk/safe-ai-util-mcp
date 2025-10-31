@@ -1,0 +1,12 @@
+# file: .gitignore
+# version: 1.0.0
+# guid: 4c2d7a9e-1b3f-4d8e-9a6b-5f7c8d9e0a1b
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# OS
+.DS_Store
