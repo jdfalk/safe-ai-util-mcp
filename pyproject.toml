@@ -1,0 +1,28 @@
+# file: pyproject.toml
+# version: 1.0.0
+# guid: 1c2b3a4d-5e6f-7a8b-9c0d-1234567890ab
+
+[project]
+name = "safe-ai-util-mcp"
+version = "0.1.0"
+description = "MCP server exposing safe-ai-util tools (git, buf, python workflows) over stdio"
+readme = "README.md"
+authors = [{ name = "jdfalk" }]
+requires-python = ">=3.10"
+dependencies = [
+  "mcp>=1.1.0",
+]
+
+[project.scripts]
+safe-ai-util-mcp = "safe_ai_util_mcp.server:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["safe_ai_util_mcp*"]
