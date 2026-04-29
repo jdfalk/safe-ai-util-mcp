@@ -25,6 +25,7 @@ sandboxes without each tool re-discovering them.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shutil
@@ -205,6 +206,65 @@ def tool_fs_read(path: str, max_bytes: Optional[int] = None) -> RunResult:
     return run_tool(args)
 
 
+def tool_fs_read_lines(path: str, start: int = 1, end: Optional[int] = None) -> RunResult:
+    """Read a 1-indexed line range from a file.
+
+    Implemented in Python on top of fs_read so we don't need a new
+    safe-ai-util subcommand. Returns just the requested slice as the
+    stdout string. Lines are 1-indexed and inclusive on both ends.
+    `end=None` means EOF.
+
+    Use this for files that exceed the agent's context budget — read
+    the chunk you need, not the whole file. The underlying fs_read
+    still goes through the sandbox + audit log.
+    """
+    if start < 1:
+        return RunResult(2, "", f"start must be >= 1, got {start}")
+    if end is not None and end < start:
+        return RunResult(2, "", f"end ({end}) must be >= start ({start})")
+    raw = run_tool(["file", "read", "--path", path])
+    if raw.code != 0:
+        return raw
+    lines = raw.stdout.splitlines(keepends=True)
+    last = end if end is not None else len(lines)
+    if start > len(lines):
+        return RunResult(0, "", f"start={start} past EOF (file has {len(lines)} lines)")
+    sliced = "".join(lines[start - 1 : last])
+    return RunResult(0, sliced, "")
+
+
+def tool_report_status(status: str, reason: str = "") -> RunResult:
+    """Agent's structured "I am done" / "I am stuck" signal.
+
+    The implementer agent calls this exactly once at the end of its loop
+    so the harness can decide whether to open the PR as ready, draft, or
+    skip it entirely. Stored in the MCP audit log so postmortem can see
+    what the agent thought it was doing.
+
+    Valid status values:
+      complete   — work is done, tests pass (or none ran), PR can be
+                   opened ready-for-review.
+      partial    — partial fix landed but more is needed; PR should be
+                   draft so a human finishes it.
+      blocked    — could not proceed (missing context, destructive
+                   error, hit a tool limit). PR should be draft (or
+                   skipped if no diff was produced).
+
+    The actual interpretation lives in the harness; this tool just
+    captures + audits the signal. The "result" returned to the agent
+    is a single line confirming what was recorded.
+    """
+    valid = {"complete", "partial", "blocked"}
+    s = status.strip().lower()
+    if s not in valid:
+        return RunResult(2, "", f"status must be one of {sorted(valid)}, got {status!r}")
+    payload = {"status": s, "reason": reason.strip()}
+    _log.info("report_status: %s", payload)
+    # Return the recorded payload as JSON so the agent can confirm; the
+    # harness reads it from the MCP audit log via the same path.
+    return RunResult(0, json.dumps(payload), "")
+
+
 def tool_fs_write(
     path: str,
     content: str,
@@ -288,25 +348,51 @@ def tool_py_pytest(pytest_args: Optional[str] = None) -> RunResult:
 # shell. Every call is logged via :func:`run_direct`.
 # ---------------------------------------------------------------------------
 
+def _repo_root_cwd(cwd: Optional[str]) -> Optional[str]:
+    """Default cwd to SAFE_AI_UTIL_REPO_ROOT if the caller didn't set one.
+
+    Without this, the agent's `go test ./...` runs from the MCP server's
+    working dir (typically `/`) and fails with "directory prefix . does
+    not contain main module or its selected dependencies." That bug
+    accounted for ~30% of burndown-cell test-step failures on 2026-04-29.
+    """
+    if cwd:
+        return cwd
+    return os.environ.get("SAFE_AI_UTIL_REPO_ROOT") or None
+
+
+def _go_env(extra: Optional[dict] = None) -> dict:
+    """Default Go env: GOEXPERIMENT=jsonv2 (audiobook-organizer requires it).
+
+    Caller-supplied env overrides ours. Agents shouldn't have to know
+    about per-repo Go experiments — bake the common cases here so test
+    runs don't spuriously fail with go.yaml.in indirect-dep errors.
+    """
+    env = {"GOEXPERIMENT": "jsonv2"}
+    if extra:
+        env.update(extra)
+    return env
+
+
 def tool_run_make(target: str, cwd: Optional[str] = None) -> RunResult:
-    return run_direct("make", [target], cwd=cwd)
+    return run_direct("make", [target], cwd=_repo_root_cwd(cwd))
 
 
 def tool_run_go_test(package: str = "./...", cwd: Optional[str] = None) -> RunResult:
-    return run_direct("go", ["test", package], cwd=cwd)
+    return run_direct("go", ["test", package], cwd=_repo_root_cwd(cwd), env=_go_env())
 
 
 def tool_run_go_build(package: str = "./...", cwd: Optional[str] = None) -> RunResult:
-    return run_direct("go", ["build", package], cwd=cwd)
+    return run_direct("go", ["build", package], cwd=_repo_root_cwd(cwd), env=_go_env())
 
 
 def tool_run_go_vet(package: str = "./...", cwd: Optional[str] = None) -> RunResult:
-    return run_direct("go", ["vet", package], cwd=cwd)
+    return run_direct("go", ["vet", package], cwd=_repo_root_cwd(cwd), env=_go_env())
 
 
 def tool_run_npm_test(cwd: Optional[str] = None) -> RunResult:
-    return run_direct("npm", ["test"], cwd=cwd)
+    return run_direct("npm", ["test"], cwd=_repo_root_cwd(cwd))
 
 
 def tool_run_npm_ci(cwd: Optional[str] = None) -> RunResult:
-    return run_direct("npm", ["ci"], cwd=cwd)
+    return run_direct("npm", ["ci"], cwd=_repo_root_cwd(cwd))

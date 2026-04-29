@@ -76,12 +76,25 @@ def _registry() -> List[tuple[str, str, Dict[str, Any], Callable[..., t.RunResul
 
         # --- fs (delegates to safe-ai-util file subcommand) ---
         ("fs_read",
-         "Read a file. Path validated against repo-root sandbox if SAFE_AI_UTIL_REPO_ROOT is set.",
+         "Read a file (full contents). Supports files up to 10 MiB by default; "
+         "override with the optional max_bytes argument. Path validated against "
+         "repo-root sandbox if SAFE_AI_UTIL_REPO_ROOT is set. There is NO 4 KiB cap "
+         "— do not assume one. For files you only need a slice of, prefer fs_read_lines.",
          {"type": "object", "properties": {
              "path": {"type": "string"},
              "max_bytes": {"type": "integer"},
          }, "required": ["path"]},
          lambda a: t.tool_fs_read(a["path"], a.get("max_bytes"))),
+        ("fs_read_lines",
+         "Read a 1-indexed inclusive line range from a file. Use this for large "
+         "files when you only need a slice (e.g. just the function around line 240). "
+         "Cheaper on context budget than fs_read of the whole file.",
+         {"type": "object", "properties": {
+             "path": {"type": "string"},
+             "start": {"type": "integer", "minimum": 1, "default": 1},
+             "end": {"type": "integer"},
+         }, "required": ["path"]},
+         lambda a: t.tool_fs_read_lines(a["path"], int(a.get("start", 1)), a.get("end"))),
         ("fs_write",
          "Write content to path (via stdin so payload is never on the cmdline).",
          {"type": "object", "properties": {
@@ -154,6 +167,22 @@ def _registry() -> List[tuple[str, str, Dict[str, Any], Callable[..., t.RunResul
         ("run_npm_ci", "Run npm ci",
          {"type": "object", "properties": {"cwd": {"type": "string"}}},
          lambda a: t.tool_run_npm_ci(a.get("cwd"))),
+
+        # --- Agent self-report ---
+        ("report_status",
+         "Signal whether the task is complete, partial, or blocked. The "
+         "harness uses this to decide whether to open the PR as ready or "
+         "draft, what labels to apply, and whether to skip PR creation "
+         "entirely. Call this exactly once at the end of your loop, "
+         "BEFORE you stop calling tools. status must be one of: "
+         "'complete' (work is done, ready for review), 'partial' (some "
+         "progress, more needed), 'blocked' (could not proceed; explain "
+         "in reason).",
+         {"type": "object", "properties": {
+             "status": {"type": "string", "enum": ["complete", "partial", "blocked"]},
+             "reason": {"type": "string"},
+         }, "required": ["status"]},
+         lambda a: t.tool_report_status(a["status"], a.get("reason", ""))),
     ]
 
 
